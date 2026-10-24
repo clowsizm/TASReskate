@@ -1,0 +1,59 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ReSkate x64 Release
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure Visual Studio 2022
+        run: >-
+          cmake -S . -B build/ci
+          -G "Visual Studio 17 2022"
+          -A x64
+          -DDINGOSDK_BUILD_TRAINER_TESTS=ON
+
+      - name: Build runtime and trainer tests
+        run: >-
+          cmake --build build/ci
+          --config Release
+          --parallel 4
+          --target
+          dingosdk_runtime
+          dingosdk_trainer_session_tests
+          dingosdk_trainer_landing_tests
+          dingosdk_trainer_presets_tests
+
+      - name: Run source-only trainer tests
+        run: >-
+          ctest --test-dir build/ci
+          -C Release
+          --output-on-failure
+          -R "^trainer_(session_extras|landing|presets)$"
+
+      - name: Upload ReSkate runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReSkate-TAS-windows-x64-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/ci/Release/ReSkate.dll
+            build/ci/Release/ReSkate.pdb
